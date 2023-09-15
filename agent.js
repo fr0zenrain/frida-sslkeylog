@@ -17,6 +17,17 @@ function queryPrefixFromMatch(match) {
     return "exports:" + moduleQuery;
 }
 
+function dumpHexString(buffer){
+    const byteArray = new Uint8Array(buffer);
+    const hexParts = [];
+    for(var i = 0; i< byteArray.length; i++){
+        const hex = byteArray[i].toString(16);
+        const paddedHex=('00'+hex).slice(-2);
+        hexParts.push(paddedHex);
+    }
+    return hexParts.join('');
+}
+
 const resolver = new ApiResolver("module");
 
 resolver.enumerateMatches("exports:*!SSL_connect", {
@@ -47,6 +58,16 @@ resolver.enumerateMatches("exports:*!SSL_connect", {
             "i2d_SSL_SESSION", "int", ["pointer", "pointer"]
         );
 
+        const SSL_get_client_random = resolveFunction(
+            "SSL_get_client_random", "int", ["pointer", "pointer", 'int']
+        );
+        const SSL_SESSION_get_master_key = resolveFunction(
+            "SSL_SESSION_get_master_key", "int", ["pointer", "pointer","int"]
+        );
+        const SSL_CTX_set_keylog_callback = resolveFunction(
+            "SSL_CTX_set_keylog_callback", "int", ["pointer", "pointer","int"]
+        );
+        
         function encodeSSLSession(session) {
             const length = i2d_SSL_SESSION(session, NULL);
             const address = Memory.alloc(length);
@@ -59,6 +80,14 @@ resolver.enumerateMatches("exports:*!SSL_connect", {
         function handleSSL(ssl) {
             const session = SSL_get_session(ssl);
             send("session", encodeSSLSession(session));
+            var master=Memory.alloc(48);
+            var random=Memory.alloc(32);
+            SSL_get_client_random(ssl,random,32)
+            SSL_SESSION_get_master_key(session,master,48);
+            var master_key=Memory.readByteArray(master, 48);
+            var client_random=Memory.readByteArray(random, 32);
+            
+            console.log('CLIENT_RANDOM',dumpHexString(client_random), dumpHexString(master_key));
         }
 
         Interceptor.attach(match.address, {
